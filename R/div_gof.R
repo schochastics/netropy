@@ -4,18 +4,18 @@
 #' and nested model comparisons.
 #' @param dat dataframe with rows as observations and columns as variables.
 #' Variables must be categorical with finite range spaces.
-#' @param var character name of a variable in \code{dat} to test for uniformity.
-#' @param var1 character name of first variable.
-#' @param var2 character name of second variable.
+#' @param var_uniform character name of a variable in \code{dat} to test for uniformity.
+#' @param var1 character name of the first variable.
+#' @param var2 character name of the second variable.
 #' @param var_cond optional character vector of conditioning variables.
 #' @param model_full list containing \code{D} and \code{df} for the full model.
 #' @param model_reduced list containing \code{D} and \code{df} for the reduced model.
-#' @param alpha significance level (default 0.05).
-#' @param dec number of decimals for rounding (default 3).
-#' @param use_approx_cv logical; if TRUE uses approximation for critical value,
-#' otherwise uses exact chi-square quantile.
-#' @return Dataframe with divergence \emph{D}, chi-square statistic, degrees of freedom,
-#' critical value, and decision.
+#' @param alpha significance level. Default is 0.05.
+#' @param dec number of decimals for rounding. Default is 3.
+#' @param use_approx_cv logical; if \code{TRUE}, uses the approximate critical value
+#' \code{df + sqrt(8 * df)}. If \code{FALSE}, uses the chi-square quantile.
+#' @return Dataframe with test type, divergence \emph{D}, chi-square statistic,
+#' degrees of freedom, critical value, and decision.
 #' @details
 #' The function implements four types of tests:
 #'
@@ -28,25 +28,24 @@
 #' \strong{3. Conditional Independence}
 #' \deqn{D = H(X,Z) + H(Y,Z) - H(Z) - H(X,Y,Z)}
 #'
-#' \strong{4. Nested Model Comparison}
-#' \deqn{2n[D(p,q_2) - D(p,q_1)]}
+#' where \emph{Z} may also represent a vector of conditioning variables.
 #'
-#' The test statistic is given by
-#' \deqn{2nD}
-#' and is approximately chi-square distributed.
+#' \strong{4. Nested Model Comparison}
+#' \deqn{D = D_{reduced} - D_{full}}
+#'
+#' The test statistic is
+#' \deqn{2nD\log(2),}
+#' since entropies are computed using base 2 logarithms.
 #'
 #' Smaller divergence values indicate better model fit.
 #' @author Termeh Shafie
 #' @seealso \code{\link{joint_entropy}}, \code{\link{entropy_trivar}}
 #' @references Frank, O., & Shafie, T. (2016). Multivariate entropy analysis of network data.
+#' \emph{Bulletin of Sociological Methodology/Bulletin de Méthodologie Sociologique}, 129(1), 45-63.
 #' @examples
-#' # use internal dataset
 #' data(lawdata)
-#'
-#' # extract attributes
 #' df_att <- lawdata[[4]]
 #'
-#' # discretize variables
 #' att_var <- data.frame(
 #'   status    = df_att$status - 1,
 #'   gender    = df_att$gender,
@@ -60,19 +59,50 @@
 #' )
 #'
 #' ## 1. Test uniformity
-#' div_gof(att_var, var = "gender")
+#' div_gof(att_var, var_uniform = "gender")
 #'
-#' ## 2. Test independence
+#' ## 2. Test pairwise independence
 #' div_gof(att_var, var1 = "status", var2 = "gender")
 #'
 #' ## 3. Test conditional independence
+#'
+#' ## (a) Conditional independence given a single variable
 #' div_gof(att_var,
 #'         var1 = "status",
 #'         var2 = "gender",
 #'         var_cond = "years")
 #'
+#' ## (b) Conditional independence given multiple variables
+#' div_gof(att_var,
+#'         var1 = "status",
+#'         var2 = "gender",
+#'         var_cond = c("years", "age"))
+#'
 #' ## 4. Nested model comparison
-#'  ## Compare a reduced independence model against the saturated empirical model
+#' ## Compare reduced models against the saturated empirical model.
+#' ## The saturated model has divergence D = 0 and df = 0.
+#' m_full <- list(D = 0, df = 0)
+#'
+#' ## (a) Pairwise independence model
+#' m_reduced <- div_gof(att_var,
+#'                     var1 = "status",
+#'                     var2 = "gender")
+#'
+#' div_gof(att_var,
+#'         model_full = m_full,
+#'         model_reduced = list(D = m_reduced$D, df = m_reduced$df))
+#'
+#' ## (b) Conditional independence model
+#' m_reduced <- div_gof(att_var,
+#'                     var1 = "status",
+#'                     var2 = "gender",
+#'                     var_cond = "years")
+#'
+#' div_gof(att_var,
+#'         model_full = m_full,
+#'         model_reduced = list(D = m_reduced$D, df = m_reduced$df))
+#'
+#' ## 5. Nested comparison against the saturated empirical model
 #' m_full <- list(D = 0, df = 0)
 #'
 #' m_reduced <- div_gof(att_var,
@@ -82,23 +112,10 @@
 #' div_gof(att_var,
 #'         model_full = m_full,
 #'         model_reduced = list(D = m_reduced$D, df = m_reduced$df))
-#'
-#'  ## Nested comparison for conditional independence
-#' m_full <- list(D = 0, df = 0)
-#'
-#' m_reduced <- div_gof(att_var,
-#'                     var1 = "status",
-#'                     var2 = "gender",
-#'                     var_cond = "years")
-#'
-#' div_gof(att_var,
-#'         model_full = m_full,
-#'         model_reduced = list(D = m_reduced$D, df = m_reduced$df))
 #' @export
-#'
 
 div_gof <- function(dat,
-                    var = NULL,
+                    var_uniform = NULL,
                     var1 = NULL,
                     var2 = NULL,
                     var_cond = NULL,
@@ -118,12 +135,16 @@ div_gof <- function(dat,
   n_levels <- function(x) length(unique(x))
 
   make_output <- function(test, D, df_chi2) {
+    if (df_chi2 <= 0) {
+      stop("Degrees of freedom must be positive.")
+    }
+
     chi2_stat <- 2 * nrow(dat) * D * log(2)
 
-    if (use_approx_cv) {
-      crit_val <- df_chi2 + sqrt(8 * df_chi2)
+    crit_val <- if (use_approx_cv) {
+      df_chi2 + sqrt(8 * df_chi2)
     } else {
-      crit_val <- qchisq(1 - alpha, df = df_chi2)
+      qchisq(1 - alpha, df = df_chi2)
     }
 
     decision <- if (chi2_stat > crit_val) {
@@ -142,22 +163,30 @@ div_gof <- function(dat,
     )
   }
 
-  # 1. uniformity: X ~ uniform
-  if (!is.null(var) && is.null(var1) && is.null(var2)) {
-    r_x <- n_levels(dat[[var]])
+  if (!is.null(var_uniform) &&
+      is.null(var1) &&
+      is.null(var2) &&
+      is.null(var_cond) &&
+      is.null(model_full) &&
+      is.null(model_reduced)) {
 
-    D <- log2(r_x) - entropy_set(dat, var)
+    r_x <- n_levels(dat[[var_uniform]])
+    D <- log2(r_x) - entropy_set(dat, var_uniform)
     df_chi2 <- r_x - 1
 
     return(make_output(
-      test = paste0("uniformity: ", var),
+      test = paste0("uniformity: ", var_uniform),
       D = D,
       df_chi2 = df_chi2
     ))
   }
 
-  # 2. pairwise independence: X independent of Y
-  if (!is.null(var1) && !is.null(var2) && is.null(var_cond)) {
+  if (!is.null(var1) &&
+      !is.null(var2) &&
+      is.null(var_cond) &&
+      is.null(model_full) &&
+      is.null(model_reduced)) {
+
     r_x <- n_levels(dat[[var1]])
     r_y <- n_levels(dat[[var2]])
 
@@ -174,11 +203,15 @@ div_gof <- function(dat,
     ))
   }
 
-  # 3. conditional independence: X independent of Y given Z
-  if (!is.null(var1) && !is.null(var2) && !is.null(var_cond)) {
+  if (!is.null(var1) &&
+      !is.null(var2) &&
+      !is.null(var_cond) &&
+      is.null(model_full) &&
+      is.null(model_reduced)) {
+
     r_x <- n_levels(dat[[var1]])
     r_y <- n_levels(dat[[var2]])
-    r_cond <- prod(sapply(dat[var_cond], n_levels))
+    r_cond <- prod(vapply(dat[var_cond], n_levels, numeric(1)))
 
     D <- entropy_set(dat, c(var1, var_cond)) +
       entropy_set(dat, c(var2, var_cond)) -
@@ -188,30 +221,25 @@ div_gof <- function(dat,
     df_chi2 <- (r_x - 1) * (r_y - 1) * r_cond
 
     return(make_output(
-      test = paste0(var1, " independent of ", var2,
-                    " given ", paste(var_cond, collapse = ", ")),
+      test = paste0(
+        var1, " independent of ", var2,
+        " given ", paste(var_cond, collapse = ", ")
+      ),
       D = D,
       df_chi2 = df_chi2
     ))
   }
 
-  # 4. nested model comparison
   if (!is.null(model_full) && !is.null(model_reduced)) {
     D <- model_reduced$D - model_full$D
     df_chi2 <- model_reduced$df - model_full$df
 
     if (df_chi2 <= 0) {
-      stop(
-        "Invalid nested model comparison: `model_reduced` must impose more constraints ",
-        "than `model_full`, so its degrees of freedom must be larger."
-      )
+      stop("Invalid nested comparison: `model_reduced$df` must be larger than `model_full$df`.")
     }
 
     if (D < 0) {
-      stop(
-        "Invalid nested model comparison: divergence for the reduced model ",
-        "should be at least as large as for the full model."
-      )
+      stop("Invalid nested comparison: `model_reduced$D` must be at least as large as `model_full$D`.")
     }
 
     return(make_output(
@@ -220,4 +248,9 @@ div_gof <- function(dat,
       df_chi2 = df_chi2
     ))
   }
+
+  stop(
+    "Specify one of: `var_uniform`, (`var1`, `var2`), ",
+    "(`var1`, `var2`, `var_cond`), or (`model_full`, `model_reduced`)."
+  )
 }
