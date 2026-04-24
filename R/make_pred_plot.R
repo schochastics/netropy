@@ -52,7 +52,7 @@
 
 make_pred_plot <- function(mat,
                            title,
-                           low = "steelblue",
+                           low = "azure4",
                            high = "white",
                            text_size = 2.5) {
   df <- as.data.frame(as.table(as.matrix(mat)))
