@@ -6,7 +6,7 @@
 \usage{
 div_gof(
   dat,
-  var = NULL,
+  var_uniform = NULL,
   var1 = NULL,
   var2 = NULL,
   var_cond = NULL,
@@ -21,11 +21,11 @@ div_gof(
 \item{dat}{dataframe with rows as observations and columns as variables.
 Variables must be categorical with finite range spaces.}
 
-\item{var}{character name of a variable in \code{dat} to test for uniformity.}
+\item{var_uniform}{character name of a variable in \code{dat} to test for uniformity.}
 
-\item{var1}{character name of first variable.}
+\item{var1}{character name of the first variable.}
 
-\item{var2}{character name of second variable.}
+\item{var2}{character name of the second variable.}
 
 \item{var_cond}{optional character vector of conditioning variables.}
 
@@ -33,16 +33,16 @@ Variables must be categorical with finite range spaces.}
 
 \item{model_reduced}{list containing \code{D} and \code{df} for the reduced model.}
 
-\item{alpha}{significance level (default 0.05).}
+\item{alpha}{significance level. Default is 0.05.}
 
-\item{dec}{number of decimals for rounding (default 3).}
+\item{dec}{number of decimals for rounding. Default is 3.}
 
-\item{use_approx_cv}{logical; if TRUE uses approximation for critical value,
-otherwise uses exact chi-square quantile.}
+\item{use_approx_cv}{logical; if \code{TRUE}, uses the approximate critical value
+\code{df + sqrt(8 * df)}. If \code{FALSE}, uses the chi-square quantile.}
 }
 \value{
-Dataframe with divergence \emph{D}, chi-square statistic, degrees of freedom,
-critical value, and decision.
+Dataframe with test type, divergence \emph{D}, chi-square statistic,
+degrees of freedom, critical value, and decision.
 }
 \description{
 Performs divergence-based goodness-of-fit tests for discrete data,
@@ -61,23 +61,21 @@ The function implements four types of tests:
 \strong{3. Conditional Independence}
 \deqn{D = H(X,Z) + H(Y,Z) - H(Z) - H(X,Y,Z)}
 
-\strong{4. Nested Model Comparison}
-\deqn{2n[D(p,q_2) - D(p,q_1)]}
+where \emph{Z} may also represent a vector of conditioning variables.
 
-The test statistic is given by
-\deqn{2nD}
-and is approximately chi-square distributed.
+\strong{4. Nested Model Comparison}
+\deqn{D = D_{reduced} - D_{full}}
+
+The test statistic is
+\deqn{2nD\log(2),}
+since entropies are computed using base 2 logarithms.
 
 Smaller divergence values indicate better model fit.
 }
 \examples{
-# use internal dataset
 data(lawdata)
-
-# extract attributes
 df_att <- lawdata[[4]]
 
-# discretize variables
 att_var <- data.frame(
   status    = df_att$status - 1,
   gender    = df_att$gender,
@@ -91,19 +89,50 @@ att_var <- data.frame(
 )
 
 ## 1. Test uniformity
-div_gof(att_var, var = "gender")
+div_gof(att_var, var_uniform = "gender")
 
-## 2. Test independence
+## 2. Test pairwise independence
 div_gof(att_var, var1 = "status", var2 = "gender")
 
 ## 3. Test conditional independence
+
+## (a) Conditional independence given a single variable
 div_gof(att_var,
         var1 = "status",
         var2 = "gender",
         var_cond = "years")
 
+## (b) Conditional independence given multiple variables
+div_gof(att_var,
+        var1 = "status",
+        var2 = "gender",
+        var_cond = c("years", "age"))
+
 ## 4. Nested model comparison
- ## Compare a reduced independence model against the saturated empirical model
+## Compare reduced models against the saturated empirical model.
+## The saturated model has divergence D = 0 and df = 0.
+m_full <- list(D = 0, df = 0)
+
+## (a) Pairwise independence model
+m_reduced <- div_gof(att_var,
+                    var1 = "status",
+                    var2 = "gender")
+
+div_gof(att_var,
+        model_full = m_full,
+        model_reduced = list(D = m_reduced$D, df = m_reduced$df))
+
+## (b) Conditional independence model
+m_reduced <- div_gof(att_var,
+                    var1 = "status",
+                    var2 = "gender",
+                    var_cond = "years")
+
+div_gof(att_var,
+        model_full = m_full,
+        model_reduced = list(D = m_reduced$D, df = m_reduced$df))
+
+## 5. Nested comparison against the saturated empirical model
 m_full <- list(D = 0, df = 0)
 
 m_reduced <- div_gof(att_var,
@@ -113,21 +142,10 @@ m_reduced <- div_gof(att_var,
 div_gof(att_var,
         model_full = m_full,
         model_reduced = list(D = m_reduced$D, df = m_reduced$df))
-
- ## Nested comparison for conditional independence
-m_full <- list(D = 0, df = 0)
-
-m_reduced <- div_gof(att_var,
-                    var1 = "status",
-                    var2 = "gender",
-                    var_cond = "years")
-
-div_gof(att_var,
-        model_full = m_full,
-        model_reduced = list(D = m_reduced$D, df = m_reduced$df))
 }
 \references{
 Frank, O., & Shafie, T. (2016). Multivariate entropy analysis of network data.
+\emph{Bulletin of Sociological Methodology/Bulletin de Méthodologie Sociologique}, 129(1), 45-63.
 }
 \seealso{
 \code{\link{joint_entropy}}, \code{\link{entropy_trivar}}

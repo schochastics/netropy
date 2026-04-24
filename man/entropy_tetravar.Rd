@@ -40,7 +40,8 @@ and
 The expected conditional joint entropy is computed as
 \deqn{EJ(X,Y|Z,U) = H(X,Z,U) + H(Y,Z,U) - H(Z,U) - H(X,Y,Z,U).}
 This quantity measures deviation from conditional independence of the form
-\emph{X \perp Y | Z,U}. Smaller values indicate weaker conditional dependence.
+\eqn{X \perp Y \,\vert\, Z, U}{X is independent of Y given Z, U}.
+Smaller values indicate weaker conditional dependence.
 }
 \examples{
 # use internal data set
