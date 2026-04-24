@@ -55,14 +55,13 @@
 #' )
 #'
 #' # compute tetravariate entropy quantities for five selected variables
-#' tetravariate_entropy(
+#' entropy_tetravar(
 #'   dat = att_var[, c("gender", "years", "age", "office", "practice")]
 #' )
 #'
 #' @export
 
 entropy_tetravar <- function(dat, dec = 2) {
-
   entropy_emp <- function(x) {
     tab <- table(x)
     p <- as.vector(tab) / sum(tab)
@@ -71,15 +70,13 @@ entropy_tetravar <- function(dat, dec = 2) {
   }
 
   vars <- colnames(dat)
-  out <- list()
+  out <- vector("list", choose(length(vars), 4) * 6)
   k <- 1
 
   for (quad in combn(vars, 4, simplify = FALSE)) {
-
     xy_pairs <- combn(quad, 2, simplify = FALSE)
 
     for (xy in xy_pairs) {
-
       zu <- setdiff(quad, xy)
 
       x <- xy[1]
@@ -88,11 +85,11 @@ entropy_tetravar <- function(dat, dec = 2) {
       u <- zu[2]
 
       h_xyzu <- entropy_emp(dat[c(x, y, z, u)])
-      h_xyz  <- entropy_emp(dat[c(x, y, z)])
-      h_xyu  <- entropy_emp(dat[c(x, y, u)])
-      h_xzu  <- entropy_emp(dat[c(x, z, u)])
-      h_yzu  <- entropy_emp(dat[c(y, z, u)])
-      h_zu   <- entropy_emp(dat[c(z, u)])
+      h_xyz <- entropy_emp(dat[c(x, y, z)])
+      h_xyu <- entropy_emp(dat[c(x, y, u)])
+      h_xzu <- entropy_emp(dat[c(x, z, u)])
+      h_yzu <- entropy_emp(dat[c(y, z, u)])
+      h_zu <- entropy_emp(dat[c(z, u)])
 
       out[[k]] <- data.frame(
         X = x,
