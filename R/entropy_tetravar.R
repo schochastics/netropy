@@ -1,32 +1,46 @@
-#' @title Trivariate Entropy
-#' @description Computes trivariate entropies of all triples of discrete
-#' variables in a multivariate data set.
+#' @title Tetravariate Entropy
+#' @description Computes tetravariate entropies, expected conditional entropies,
+#' and expected conditional joint entropies for all quadruples of variables in a
+#' multivariate discrete data set.
 #' @param dat dataframe with rows as observations and columns as variables.
-#' Variables must all be observed or transformed categorical with finite range spaces.
-#' @return Dataframe with the first three columns representing possible triples
-#' of variables (\code{X}, \code{Y}, \code{Z}) and the fourth column giving
-#' trivariate entropies \code{H(X,Y,Z)}.
-#' @details Trivariate entropies can be used to check for functional relationships
-#' and stochastic independence between triples of variables.
-#'
-#' The trivariate entropy \emph{H(X,Y,Z)} of three discrete random variables
-#' \emph{X}, \emph{Y}, and \emph{Z} is bounded according to
-#' \deqn{H(X,Y) <= H(X,Y,Z) <= H(X,Z) + H(Y,Z) - H(Z).}
-#'
-#' The increment between the trivariate entropy and its lower bound is equal to
-#' the expected conditional entropy.
+#' Variables must be categorical with finite range spaces.
+#' @param dec number of decimals used for rounding the entropy values.
+#' Default is 2.
+#' @return A dataframe with one row for each ordered decomposition of four
+#' variables into predictors and conditioning variables. The columns are:
+#' \item{X}{first variable in the pair of interest.}
+#' \item{Y}{second variable in the pair of interest.}
+#' \item{Z}{first conditioning variable.}
+#' \item{U}{second conditioning variable.}
+#' \item{H_XYZU}{tetravariate entropy \emph{H(X,Y,Z,U)}.}
+#' \item{EH_U_XYZ}{expected conditional entropy \emph{EH(U|X,Y,Z)}.}
+#' \item{EH_Z_XYU}{expected conditional entropy \emph{EH(Z|X,Y,U)}.}
+#' \item{EJ_XY_ZU}{expected conditional joint entropy \emph{EJ(X,Y|Z,U)}.}
+#' @details For four variables \emph{X}, \emph{Y}, \emph{Z}, and \emph{U}, the
+#' tetravariate entropy is denoted \emph{H(X,Y,Z,U)}. The expected conditional
+#' entropies are computed as
+#' \deqn{EH(U|X,Y,Z) = H(X,Y,Z,U) - H(X,Y,Z)}
+#' and
+#' \deqn{EH(Z|X,Y,U) = H(X,Y,Z,U) - H(X,Y,U).}
+#' The expected conditional joint entropy is computed as
+#' \deqn{EJ(X,Y|Z,U) = H(X,Z,U) + H(Y,Z,U) - H(Z,U) - H(X,Y,Z,U).}
+#' This quantity measures deviation from conditional independence of the form
+#' \emph{X \perp Y | Z,U}. Smaller values indicate weaker conditional dependence.
 #' @author Termeh Shafie
-#' @seealso \code{\link{entropy_bivar}}, \code{\link{prediction_power}}
-#' @references Frank, O., & Shafie, T. (2016). Multivariate entropy analysis of network data.
-#' \emph{Bulletin of Sociological Methodology/Bulletin de Méthodologie Sociologique}, 129(1), 45-63.
+#' @seealso \code{\link{entropy_trivar}}, \code{\link{entropy_bivar}},
+#' \code{\link{prediction_power}}
+#' @references Frank, O., & Shafie, T. (2016). Multivariate entropy analysis of
+#' network data. \emph{Bulletin of Sociological Methodology/Bulletin de
+#' Méthodologie Sociologique}, 129(1), 45-63.
 #' @examples
 #' # use internal data set
 #' data(lawdata)
+#'
+#' # extract node attributes
 #' df_att <- lawdata[[4]]
 #'
 #' # data editing:
-#' # 1. categorize variables 'years' and 'age' into approximately
-#' # equally sized groups
+#' # 1. discretize 'years' and 'age' into three approximately balanced groups
 #' # 2. recode selected variables so categories start at 0
 #' att_var <- data.frame(
 #'   status    = df_att$status - 1,
@@ -40,51 +54,64 @@
 #'   lawschool = df_att$lawschool - 1
 #' )
 #'
-#' # calculate trivariate entropies
-#' h_trivar <- entropy_trivar(att_var)
+#' # compute tetravariate entropy quantities for five selected variables
+#' tetravariate_entropy(
+#'   dat = att_var[, c("gender", "years", "age", "office", "practice")]
+#' )
+#'
 #' @export
 
-entropy_trivar <- function(dat) {
-  varname_orig <- colnames(dat)
-  varname_new <- sprintf("V%d", seq_len(ncol(dat)))
-  names(dat) <- varname_new
+entropy_tetravar <- function(dat, dec = 2) {
 
-  h3 <- data.frame(
-    X = character(),
-    Y = character(),
-    Z = character(),
-    `H(X,Y,Z)` = numeric(),
-    check.names = FALSE
-  )
+  entropy_emp <- function(x) {
+    tab <- table(x)
+    p <- as.vector(tab) / sum(tab)
+    p <- p[p > 0]
+    sum(p * log2(1 / p))
+  }
 
-  k <- 0
+  vars <- colnames(dat)
+  out <- list()
+  k <- 1
 
-  for (x in seq_len(ncol(dat) - 2)) {
-    for (y in (x + 1):(ncol(dat) - 1)) {
-      for (z in (y + 1):ncol(dat)) {
-        k <- k + 1
+  for (quad in combn(vars, 4, simplify = FALSE)) {
 
-        frq <- table(dat[, x], dat[, y], dat[, z])
-        frq_os <- as.data.frame(frq)
+    xy_pairs <- combn(quad, 2, simplify = FALSE)
 
-        h_pos <- ifelse(
-          frq_os$Freq > 0,
-          frq_os$Freq * log2(frq_os$Freq),
-          0
-        )
+    for (xy in xy_pairs) {
 
-        h_tmp <- log2(nrow(dat)) -
-          (1 / nrow(dat)) * sum(h_pos)
+      zu <- setdiff(quad, xy)
 
-        h3[k, ] <- list(
-          varname_orig[x],
-          varname_orig[y],
-          varname_orig[z],
-          round(h_tmp, 3)
-        )
-      }
+      x <- xy[1]
+      y <- xy[2]
+      z <- zu[1]
+      u <- zu[2]
+
+      h_xyzu <- entropy_emp(dat[c(x, y, z, u)])
+      h_xyz  <- entropy_emp(dat[c(x, y, z)])
+      h_xyu  <- entropy_emp(dat[c(x, y, u)])
+      h_xzu  <- entropy_emp(dat[c(x, z, u)])
+      h_yzu  <- entropy_emp(dat[c(y, z, u)])
+      h_zu   <- entropy_emp(dat[c(z, u)])
+
+      out[[k]] <- data.frame(
+        X = x,
+        Y = y,
+        Z = z,
+        U = u,
+        H_XYZU = h_xyzu,
+        EH_U_XYZ = h_xyzu - h_xyz,
+        EH_Z_XYU = h_xyzu - h_xyu,
+        EJ_XY_ZU = h_xzu + h_yzu - h_zu - h_xyzu
+      )
+
+      k <- k + 1
     }
   }
 
-  h3
+  res <- do.call(rbind, out)
+  res[, 5:8] <- round(res[, 5:8], dec)
+  rownames(res) <- NULL
+
+  res
 }
