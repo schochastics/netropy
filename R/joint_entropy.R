@@ -1,85 +1,97 @@
-#' @title Prediction Power Heatmap
-#' @description Creates a heatmap for visualizing prediction power from a
-#' prediction power matrix.
-#' @param mat matrix returned by \code{\link{prediction_power}}. Entries should
-#' contain expected conditional entropies \emph{EH(Z|X,Y)}.
-#' @param title character string giving the plot title.
-#' @param low color for low expected conditional entropy values. Default is
-#' \code{"steelblue"}.
-#' @param high color for high expected conditional entropy values. Default is
-#' \code{"white"}.
-#' @param text_size numeric value controlling the size of the cell labels.
-#' Default is 2.5.
-#' @return A \code{ggplot} object showing a heatmap of expected conditional
-#' entropy values. Darker cells indicate lower prediction uncertainty and
-#' therefore higher prediction power.
-#' @details The plot visualizes expected conditional entropies
-#' \deqn{EH(Z|X,Y)}
-#' where \emph{Z} is the target variable and \emph{X} and \emph{Y} are predictors.
-#' Diagonal entries correspond to prediction using a single predictor,
-#' \emph{EH(Z|X)}, while off-diagonal entries correspond to prediction using
-#' pairs of predictors, \emph{EH(Z|X,Y)}. Lower values indicate stronger
-#' predictive power.
-#' @seealso \code{\link{prediction_power}}, \code{\link{entropy_trivar}}
+#' @title Joint Entropy
+#' @description Computes the joint entropies between all pairs of (discrete)
+#' variables in a multivariate data set.
+#' @param dat dataframe with rows as observations and columns as variables.
+#' Variables must all be observed or transformed categorical with finite range spaces.
+#' @param dec the precision given in number of decimals for which
+#' the frequency distribution of unique entropy values is created. Default is 3.
+#' @return List with
+#' \item{matrix}{an upper triangular joint entropy matrix (univariate entropies in the diagonal).}
+#' \item{freq}{a dataframe giving the frequency distributions of unique joint entropy values.}
+#' @details The joint entropy \emph{J(X,Y)} of discrete variables \emph{X} and \emph{Y}
+#' is a measure of dependence or association between them, defined as
+#' \cr
+#'
+#' \emph{J(X,Y) = H(X) + H(Y) - H(X,Y)}.
+#' \cr
+#'
+#' Two variables are independent if their joint entropy,
+#' i.e. their mutual information, is equal to zero.
+#' The frequency distributions can be used to decide upon convenient thresholds for
+#' constructing association graphs.
+#' @author Termeh Shafie
+#' @seealso \code{\link{assoc_graph}}, \code{\link{entropy_bivar}}
+#' @references Frank, O., & Shafie, T. (2016). Multivariate entropy analysis of network data.
+#' \emph{Bulletin of Sociological Methodology/Bulletin de Méthodologie Sociologique}, 129(1), 45-63.
 #' @examples
 #' # use internal data set
 #' data(lawdata)
+#' df.att <- lawdata[[4]]
 #'
-#' # extract node attributes
-#' df_att <- lawdata[[4]]
-#'
-#' # data editing:
-#' # 1. discretize 'years' and 'age' into 3 categories
-#' # 2. ensure values start at 0 where needed
-#' att_var <- data.frame(
-#'   status    = df_att$status - 1,
-#'   gender    = df_att$gender,
-#'   office    = df_att$office - 1,
-#'   years     = ifelse(df_att$years <= 3, 0,
-#'                 ifelse(df_att$years <= 13, 1, 2)),
-#'   age       = ifelse(df_att$age <= 35, 0,
-#'                 ifelse(df_att$age <= 45, 1, 2)),
-#'   practice  = df_att$practice,
-#'   lawschool = df_att$lawschool - 1
+#' # three steps of data editing:
+#' # 1. categorize variables 'years' and 'age' based on
+#' # approximately three equally size groups (values based on cdf)
+#' # 2. make sure all outcomes start from the value 0 (optional)
+#' # 3. remove variable 'senior' as it consists of only unique values (thus redundant)
+#' df.att.ed <- data.frame(
+#'     status = df.att$status,
+#'     gender = df.att$gender,
+#'     office = df.att$office - 1,
+#'     years = ifelse(df.att$years <= 3, 0,
+#'         ifelse(df.att$years <= 13, 1, 2)
+#'     ),
+#'     age = ifelse(df.att$age <= 35, 0,
+#'         ifelse(df.att$age <= 45, 1, 2)
+#'     ),
+#'     practice = df.att$practice,
+#'     lawschool = df.att$lawschool - 1
 #' )
 #'
-#' # compute prediction power matrix for 'status'
-#' pred_mat <- prediction_power("status", att_var)
-#'
-#' # visualize prediction power
-#' make_pred_plot(pred_mat, "Prediction Power for Status")
+#' # calculate joint entropies
+#' J <- joint_entropy(df.att.ed)
+#' # joint entropy matrix
+#' J$matrix
+#' # frequency distribution of joint entropy values
+#' J$freq
 #' @export
+#'
+#'
 
-make_pred_plot <- function(mat,
-                           title,
-                           low = "steelblue",
-                           high = "white",
-                           text_size = 2.5) {
-  df <- as.data.frame(as.table(as.matrix(mat)))
-  names(df) <- c("X", "Y", "EH")
+joint_entropy <- function(dat, dec = 3) {
+    varname_orig <- colnames(dat)
+    varname_new <- sprintf("V%d", seq_len(length(dat)))
+    names(dat) <- varname_new
 
-  df <- df[!is.na(df$EH), ]
+    J <- matrix(0, nrow = ncol(dat), ncol = ncol(dat))
+    colnames(J) <- colnames(dat)
+    rownames(J) <- colnames(dat)
 
-  ggplot2::ggplot(df, ggplot2::aes(x = Y, y = X, fill = EH)) +
-    ggplot2::geom_tile(color = "white") +
-    ggplot2::geom_text(
-      ggplot2::aes(label = round(EH, 2)),
-      size = text_size
-    ) +
-    ggplot2::scale_fill_gradient(
-      low = low,
-      high = high,
-      name = "EH"
-    ) +
-    ggplot2::labs(
-      title = title,
-      x = NULL,
-      y = NULL
-    ) +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, size = 7),
-      axis.text.y = ggplot2::element_text(size = 7),
-      plot.title = ggplot2::element_text(size = 10)
-    )
+    # get the bivariate entropies H
+    H <- entropy_bivar(dat)
+
+    # joint entropies after calculation of H matrix
+    for (x in seq_len(ncol(H))) {
+        for (y in (x):ncol(H)) {
+            J[x, y] <- H[x, x] + H[y, y] - H[x, y]
+        }
+    }
+
+    # given input argument dec giving precision, round J
+    J <- round(J, dec)
+    colnames(J) <- varname_orig
+    rownames(J) <- varname_orig
+    J[lower.tri(J)] <- NA
+
+
+    # frequency distribution of the joint entropy values
+    FrqJ <- as.data.frame(table(round(J[upper.tri(J, diag = FALSE)], dec)))
+    FrqJ <- FrqJ[order(FrqJ$Var1, decreasing = TRUE), ]
+    FrqJ$CumFreq <- cumsum(FrqJ$Freq)
+    names(FrqJ)[names(FrqJ) == "Var1"] <- "j"
+    names(FrqJ)[names(FrqJ) == "Freq"] <- " #(J = j)"
+    names(FrqJ)[names(FrqJ) == "CumFreq"] <- "#(J >= j)"
+    row.names(FrqJ) <- NULL
+
+    listout <- list("matrix" = J, "freq" = FrqJ)
+    return(listout)
 }
